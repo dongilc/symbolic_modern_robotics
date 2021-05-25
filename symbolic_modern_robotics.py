@@ -37,7 +37,7 @@ def AxisAng3(w):
     w_hat = w/norm
     theta = norm
     
-    return w_hat.evalf(),theta.evalf()
+    return w_hat, theta
 
 ###### Rotation Matrix
 # Calculate SO3 from so3 by Matrix exponential
@@ -146,3 +146,19 @@ def MatrixLog6(T):
                         [0,0,0,0]])
     #return R, p, so3, w, w_hat, theta, so3_hat, G_inv_theta, v, se3 
     return se3
+
+###### Space Form PoE
+# Computes forward kinematics in the space frame
+def FKinSpace(M, Slist, thetalist):
+    T = M
+    for i in range(len(thetalist) - 1, -1, -1):
+       T = s.simplify(MatrixExp6(VecTose3(Slist[:, i]*thetalist[i]))@T)
+    return T
+
+###### Body Form PoE
+# Computes forward kinematics in the body frame
+def FKinBody(M, Blist, thetalist):
+    T = M
+    for i in range(len(thetalist)):
+       T = s.simplify(T@MatrixExp6(VecTose3(Blist[:, i]*thetalist[i])))
+    return T
