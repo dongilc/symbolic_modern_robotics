@@ -1,14 +1,17 @@
 # Modern Robotics Python Symbolic Calculation Library, BSD License.
 # Written by Dongil Choi, MyongJi University, South Korea. dongilc@mju.ac.kr
 # Theoretical Background (Textbook) : Modern Robotics, Kevin M. Lynch and Frank C. Park
-# Symbolic Calculation Functions : Skew Symmatric
-# 2021 / 04 / 05
+#
+# 2021 / 06 / 02
 # How to use : 
-#       import intelligent_robotics as ir
-#       dir(ir)
-#       help(ir.DH)
+#       import symbolic_modern_robotics as smr
+#       dir(smr)
 
 import sympy as s
+from sympy.physics.vector import dynamicsymbols
+from sympy.physics.vector import time_derivative
+from sympy.physics.vector import ReferenceFrame
+N = ReferenceFrame('N')
 
 ###### Rotation Matrix
 # Calculate so3 from 3-vector
@@ -173,6 +176,21 @@ def Adjoint(T):
                      [VecToso3(p)@R ,R]])
     return Ad_T
 
+##### adjoint of V (Lie Bracket of V)
+# Computes adjoint of Twist, V
+def ad(V):
+    w = s.Matrix(V[0:3])
+    v = s.Matrix(V[3:6])
+        
+    skew_w = VecToso3(w)
+    skew_v = VecToso3(v)
+
+    adV = s.Matrix([[skew_w, s.Matrix.zeros(3)],
+                    [skew_v, skew_w]])
+    return adV
+
+##### Inverse of Homogeneos Transformation Matrix
+# Computes inverse of T
 def TransInv(T):
     R = T[0:3,0:3]
     p = T[0:3,3]
@@ -187,7 +205,7 @@ def JacobianBody(Blist, thetalist):
     Jb = Blist.copy()
     T = s.Matrix.eye(4)
     for i in range(len(thetalist) - 2, -1, -1):
-        T = s.simplify( T @ MatrixExp6(VecTose3(Blist[:, i+1]*-thetalist[i+1])) )
+        T = T @ MatrixExp6(VecTose3(Blist[:, i+1]*-thetalist[i+1]))
         Jb[:, i] = s.simplify(Adjoint(T)@Blist[:, i])
     return Jb
 
@@ -197,26 +215,34 @@ def JacobianSpace(Slist, thetalist):
     Js = Slist.copy()
     T = s.Matrix.eye(4)
     for i in range(1, len(thetalist)):
-        T = s.simplify( T @ MatrixExp6(VecTose3(Slist[:, i-1]*thetalist[i-1])) )
+        T = T @ MatrixExp6(VecTose3(Slist[:, i-1]*thetalist[i-1]))
         Js[:, i] = s.simplify(Adjoint(T)@Slist[:, i])
         #print(i, Js[:, i])
     return Js
 
-###### Numerical Inverse Kinematics using Newton-Rapton Method
-# Computes inverse kinematics in the body frame
-def IKinBody(Blist, M, Tsd, thetalist0, eomg, ev):
-    thetalist = thetalist0
-    i = 0
-    maxiterations = 20
-    T_sb = FKinBody(M, Blist, thetalist)
-    T_sb_inv = TransInv(T_sb)
-    T_bd = s.simplify(T_sb_inv@Tsd)
-    Vb = se3ToVec(MatrixLog6(T_bd))
-    #err = np.linalg.norm([Vb[0], Vb[1], Vb[2]]) > eomg or np.linalg.norm([Vb[3], Vb[4], Vb[5]]) > ev
-    #while err and i < maxiterations:
-    #    thetalist = thetalist + np.dot(np.linalg.pinv(JacobianBody(Blist, thetalist)), Vb)
-    #    i = i + 1
-    #    Vb = se3ToVec(MatrixLog6(np.dot(TransInv(FKinBody(M, Blist, thetalist)), T)))
-    #    err = np.linalg.norm([Vb[0], Vb[1], Vb[2]]) > eomg or np.linalg.norm([Vb[3], Vb[4], Vb[5]]) > ev
-    #return (thetalist, not err)
-    return Vb
+##### Inverse Dynamics
+# Newton-Euler Inverse Dynamics Calculation
+# 1. Forward Iteration : Calculate th, thd, thdd from base to tip
+# 2. Backward Iteration : Calculate F, Tau from tip to base
+def InverseDynamics(thetalist, dthetalist, ddthetalist, g, Ftip, Mlist, Glist, Slist):
+    n = len(thetalist)
+    Mi = s.Matrix.eye(4)
+    Ai = s.Matrix.zeros(6,n)
+    AdTi = [[None]] * (n + 1)
+    Vi = s.Matrix.zeros(6, n + 1)
+    Vdi = s.Matrix.zeros(6, n + 1)
+    Vdi[:, 0] = s.Matrix([0, 0, 0, -g[0], -g[1], -g[2]])
+    AdTi[n] = Adjoint(TransInv(Mlist[n]))
+    Fi = Ftip.copy()
+    taulist = s.Matrix.zeros(n)
+    for i in range(n):
+        Mi = Mi@Mlist[i]
+        Ai[:, i] = Adjoint(TransInv(Mi))@Slist[:, i]
+        AdTi[i] = Adjoint( MatrixExp6(VecTose3(Ai[:, i] * -thetalist[i]))@TransInv(Mlist[i]) )
+        Vi[:, i + 1] = AdTi[i]@Vi[:,i] + Ai[:, i] * dthetalist[i]
+        Vdi[:, i + 1] = AdTi[i]@Vdi[:, i] + Ai[:, i] * ddthetalist[i] + ad(Vi[:, i + 1])@Ai[:, i] * dthetalist[i]
+        #print(Vi[:, i + 1], Vdi[:, i + 1])
+    for i in range (n - 1, -1, -1):
+        Fi = AdTi[i + 1].T@Fi + Glist[i]@Vdi[:, i + 1] - ad(Vi[:, i + 1]).T@Glist[i]@Vi[:, i + 1]
+        taulist[i] = s.simplify( Fi.T@Ai[:, i] )
+    return taulist
