@@ -222,27 +222,71 @@ def JacobianSpace(Slist, thetalist):
 
 ##### Inverse Dynamics
 # Newton-Euler Inverse Dynamics Calculation
-# 1. Forward Iteration : Calculate th, thd, thdd from base to tip
+# 1. Forward Iteration : Calculate twist, twist_dot from base to tip
 # 2. Backward Iteration : Calculate F, Tau from tip to base
 def InverseDynamics(thetalist, dthetalist, ddthetalist, g, Ftip, Mlist, Glist, Slist):
-    n = len(thetalist)
-    Mi = s.Matrix.eye(4)
-    Ai = s.Matrix.zeros(6,n)
-    AdTi = [[None]] * (n + 1)
-    Vi = s.Matrix.zeros(6, n + 1)
-    Vdi = s.Matrix.zeros(6, n + 1)
-    Vdi[:, 0] = s.Matrix([0, 0, 0, -g[0], -g[1], -g[2]])
-    AdTi[n] = Adjoint(TransInv(Mlist[n]))
+    n = len(thetalist)  # Degree of freedom
+    
+    Mi = s.Matrix.eye(4)    # M_0,i - M1, M2, M3 ...
+    Ai = s.Matrix.zeros(6,n) # Body Screw - A1, A2, A3 ...
+    
+    Vi = s.Matrix.zeros(6, n + 1) # twist - V0, V1, V2 ...
+    Vi_dot = s.Matrix.zeros(6, n + 1) # twist_dot - V_dot0, V_dot1, ...
+    Vi_dot[:, 0] = s.Matrix([0, 0, 0, -g[0], -g[1], -g[2]])
+
+    AdTi_im1 = [[None]] * (n + 1)
+    
     Fi = Ftip.copy()
-    taulist = s.Matrix.zeros(n)
-    for i in range(n):
-        Mi = Mi@Mlist[i]
-        Ai[:, i] = Adjoint(TransInv(Mi))@Slist[:, i]
-        AdTi[i] = Adjoint( MatrixExp6(VecTose3(Ai[:, i] * -thetalist[i]))@TransInv(Mlist[i]) )
-        Vi[:, i + 1] = AdTi[i]@Vi[:,i] + Ai[:, i] * dthetalist[i]
-        Vdi[:, i + 1] = AdTi[i]@Vdi[:, i] + Ai[:, i] * ddthetalist[i] + ad(Vi[:, i + 1])@Ai[:, i] * dthetalist[i]
-        #print(Vi[:, i + 1], Vdi[:, i + 1])
-    for i in range (n - 1, -1, -1):
-        Fi = AdTi[i + 1].T@Fi + Glist[i]@Vdi[:, i + 1] - ad(Vi[:, i + 1]).T@Glist[i]@Vi[:, i + 1]
-        taulist[i] = s.simplify( Fi.T@Ai[:, i] )
+    taulist = s.Matrix.zeros(n, 1)
+    
+    # Forward Iteration
+    for k in range(n):
+        i = k+1
+        Mi = Mi@Mlist[k]
+        Ai[:,k] = Adjoint(TransInv(Mi))@Slist[:,k]
+        Tim1_i = s.simplify(Mlist[k]@MatrixExp6(VecTose3(Ai[:,k]*thetalist[k])))
+        Ti_im1 = s.simplify(TransInv(Tim1_i))
+        AdTi_im1[k] = Adjoint(Ti_im1)
+        Vi[:,i] = Ai[:,k]*dthetalist[k] + AdTi_im1[k]@Vi[:,k]
+        Vi_dot[:,i] = Ai[:,k]*ddthetalist[k] + AdTi_im1[k]@Vi_dot[:,k] + ad(Vi[:,k])@Ai[:,k]*dthetalist[k]
+        #print(i)
+        #print(AdTi_im1[k])
+        #print(Ai[:,k])
+    
+    #print(Vi)
+    #print(Vi_dot)
+    
+    AdTi_im1[n] = Adjoint(TransInv(Mi))
+    #print(AdTi_im1)
+    
+    # Backward Iteration
+    for k in range (n - 1, -1, -1):
+        i = k+1
+        Fi = AdTi_im1[i].T@Fi + Glist[k]@Vi_dot[:,i] - ad(Vi[:,i]).T@(Glist[k]@Vi[:,i])
+        taulist[k] = s.simplify( Fi.T@Ai[:,k] )
     return taulist
+
+###### 머니퓰레이터 운동방정식 정리해주는 함수
+def get_EoM_from_T(tau,qdd,g):
+    # Inertia Matrix, M(q)를 구해주는 부분
+    M = s.zeros(len(tau));
+    i = 0;
+    for tau_i in tau:
+        M_i = [];
+        M_i.append(s.simplify(s.diff(tau_i,qdd)));
+        M[:,i] = s.Matrix(M_i);
+        i+=1;
+
+    # Gravity Matrix, G(q) 를 구해주는 부분
+    G = s.zeros(len(tau),1);
+    i = 0;
+    for tau_i in tau:
+        G_i = [];
+        G_i.append(s.simplify(s.diff(tau_i,g)));
+        G[i] = s.Matrix(G_i);
+        i+=1;
+        
+    # 원심력 & 코리올리스 행렬, C(q,qd) 를 구해주는 부분
+    C = s.simplify(tau - M@qdd - G*g);
+    
+    return s.simplify(M), s.simplify(C), s.simplify(G*g)
