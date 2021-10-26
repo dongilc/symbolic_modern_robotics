@@ -247,8 +247,8 @@ def InverseDynamics(thetalist, dthetalist, ddthetalist, g, Ftip, Mlist, Glist, S
         Tim1_i = s.simplify(Mlist[k]@MatrixExp6(VecTose3(Ai[:,k]*thetalist[k])))
         Ti_im1 = s.simplify(TransInv(Tim1_i))
         AdTi_im1[k] = Adjoint(Ti_im1)
-        Vi[:,i] = Ai[:,k]*dthetalist[k] + AdTi_im1[k]@Vi[:,k]
-        Vi_dot[:,i] = Ai[:,k]*ddthetalist[k] + AdTi_im1[k]@Vi_dot[:,k] + ad(Vi[:,k])@Ai[:,k]*dthetalist[k]
+        Vi[:,i] = s.simplify(Ai[:,k]*dthetalist[k] + AdTi_im1[k]@Vi[:,k])
+        Vi_dot[:,i] = s.simplify(Ai[:,k]*ddthetalist[k] + AdTi_im1[k]@Vi_dot[:,k] + ad(Vi[:,k])@Ai[:,k]*dthetalist[k])
         #print(i)
         #print(AdTi_im1[k])
         #print(Ai[:,k])
@@ -264,7 +264,7 @@ def InverseDynamics(thetalist, dthetalist, ddthetalist, g, Ftip, Mlist, Glist, S
         i = k+1
         Fi = AdTi_im1[i].T@Fi + Glist[k]@Vi_dot[:,i] - ad(Vi[:,i]).T@(Glist[k]@Vi[:,i])
         taulist[k] = s.simplify( Fi.T@Ai[:,k] )
-    return taulist
+    return taulist, Vi, Vi_dot
 
 ###### 머니퓰레이터 운동방정식 정리해주는 함수
 def get_EoM_from_T(tau,qdd,g):
