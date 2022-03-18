@@ -248,7 +248,7 @@ def InverseDynamics(thetalist, dthetalist, ddthetalist, g, Ftip, Mlist, Glist, S
         Ti_im1 = s.simplify(TransInv(Tim1_i))
         AdTi_im1[k] = Adjoint(Ti_im1)
         Vi[:,i] = s.simplify(Ai[:,k]*dthetalist[k] + AdTi_im1[k]@Vi[:,k])
-        Vi_dot[:,i] = s.simplify(Ai[:,k]*ddthetalist[k] + AdTi_im1[k]@Vi_dot[:,k] + ad(Vi[:,i])@Ai[:,k]*dthetalist[k]) # contribution of Minjun Choi. ad(Vi[:,k]) -> ad(Vi[:,i])
+        Vi_dot[:,i] = s.simplify(Ai[:,k]*ddthetalist[k] + AdTi_im1[k]@Vi_dot[:,k] + ad(Vi[:,i])@Ai[:,k]*dthetalist[k]) # contribution of Minjun Choi.
         #print(i)
         #print(AdTi_im1[k])
         #print(Ai[:,k])
